@@ -133,18 +133,9 @@ export default function GameContext({ gameId, onGameSelect }: Props) {
                     </StatsRow>
 
                     <StatsRow>
-                        <Typography variant="subtitle2">Count</Typography>
+                        <Typography variant="subtitle2">Situation</Typography>
                         <Chip
-                            label={`${gameContext.balls}-${gameContext.strikes}`}
-                            color="primary"
-                            variant="outlined"
-                        />
-                    </StatsRow>
-
-                    <StatsRow>
-                        <Typography variant="subtitle2">Outs</Typography>
-                        <Chip
-                            label={gameContext.outs}
+                            label={`${gameContext.count.balls} balls, ${gameContext.count.strikes} strikes, ${gameContext.count.outs} outs`}
                             color="primary"
                             variant="outlined"
                         />

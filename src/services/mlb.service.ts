@@ -1,6 +1,7 @@
 import axios from 'axios';
-import { Player, GameContext, MatchupStats } from '../types/mlb.types';
+import { Player, GameContext, MatchupStats, CurrentPlay, GameMetadata } from '../types/mlb.types';
 import { format } from 'date-fns';
+import { QuestionAnalysis } from '../types/question-analyzer.types';
 
 interface GameResponse {
     gamePk: string;
@@ -32,6 +33,7 @@ interface GameResponse {
     content: any;
     linescore: any;
 }
+
 
 export class MLBService {
     public baseUrl = 'https://statsapi.mlb.com/api/v1';
@@ -103,9 +105,13 @@ export class MLBService {
         }
     }
 
-    async getPlayerStats(playerId: string) {
+    async getPlayerStats(playerId: string, params: ReturnType<typeof this.getStatsParams>) {
         try {
-            const response = await axios.get(`${this.baseUrl}/people/${playerId}/stats?stats=season`);
+            console.log('Getting player stats for:', playerId, JSON.stringify(params, null, 2));
+            const response = await axios.get(
+                `${this.baseUrl}/people/${playerId}/stats`,
+                { params }
+            );
             return response.data;
         } catch (error) {
             console.error('Error fetching player stats:', error);
@@ -136,7 +142,6 @@ export class MLBService {
                     }
                 }
             );
-            console.log(response.data);
             return response.data;
         } catch (error) {
             console.error('Error fetching matchup stats:', error);
@@ -149,15 +154,14 @@ export class MLBService {
             const gameData = await this.getLiveGameData(gameId);
             const liveData = gameData.liveData;
             const plays = liveData.plays;
-            const currentPlay = plays.currentPlay;
+            const currentPlay: CurrentPlay = plays.currentPlay;
 
             return {
                 gameId,
                 inning: currentPlay.about.inning,
                 isTopInning: currentPlay.about.isTopInning,
-                outs: currentPlay.count.outs,
-                balls: currentPlay.count.balls,
-                strikes: currentPlay.count.strikes,
+                count: currentPlay.count,
+                currentPlayResult: currentPlay.result,
                 pitcher: await this.getPlayer(currentPlay.matchup.pitcher.id),
                 batter: await this.getPlayer(currentPlay.matchup.batter.id),
                 runnersOn: await this.getCurrentRunners(gameData)
@@ -168,7 +172,7 @@ export class MLBService {
         }
     }
 
-    async getPlayer(playerId: string): Promise<Player> {
+    async getPlayer(playerId: number): Promise<Player> {
         try {
             const response = await axios.get(`${this.baseUrl}/people/${playerId}`);
             return response.data.people[0];
@@ -204,6 +208,184 @@ export class MLBService {
         } catch (error) {
             console.error('Error fetching situational stats:', error);
             throw error;
+        }
+    }
+
+    async getRequiredData(analysis: QuestionAnalysis, gameId?: string, gameContext?: GameContext, gameMetadata?: GameMetadata) {
+        const data: any = {};
+
+        if (analysis.dataNeeded.gameContext && gameId) {
+            data.gameContext = await this.getCurrentGameContext(gameId);
+        }
+
+        if (analysis.dataNeeded.batterStats && gameContext?.batter) {
+            data.batterStats = await this.getPlayerStats(
+                gameContext.batter.id,
+                this.getStatsParams(analysis.timeframe, gameMetadata?.gameDate)
+            );
+        }
+
+        if (analysis.dataNeeded.pitcherStats && gameContext?.pitcher) {
+            data.pitcherStats = await this.getPlayerStats(
+                gameContext.pitcher.id,
+                this.getStatsParams(analysis.timeframe, gameMetadata?.gameDate)
+            );
+        }
+
+        if (analysis.dataNeeded.matchupHistory &&
+            gameContext?.batter &&
+            gameContext?.pitcher) {
+            data.matchupStats = await this.getMatchupStats(
+                gameContext.batter.id,
+                gameContext.pitcher.id
+            );
+        }
+
+        if (analysis.dataNeeded.recentPerformance && gameContext?.pitcher) {
+            data.recentPerformance = await this.getPlayerStats(
+                gameContext.pitcher.id,
+                this.getStatsParams(analysis.timeframe, gameMetadata?.gameDate)
+            );
+        }
+
+        if (analysis.dataNeeded.recentPerformance && gameContext?.batter) {
+            data.recentPerformance = await this.getPlayerStats(
+                gameContext.batter.id,
+                this.getStatsParams(analysis.timeframe, gameMetadata?.gameDate)
+            );
+        }
+
+        console.log('Data:', JSON.stringify(data, null, 2));
+        return data;
+    }
+
+    private getStatsParams(timeframe: QuestionAnalysis['timeframe'], gameDate?: string) {
+        const params: {
+            stats: string;
+            group?: string;
+            season?: number;
+            gameType?: string;
+            startDate?: string;
+            endDate?: string;
+        } = {
+            stats: 'season',
+            gameType: 'R'  // Regular season
+        };
+
+        switch (timeframe) {
+            case 'season':
+                params.stats = 'season';
+                params.season = new Date().getFullYear();
+                break;
+
+            case 'recent':
+                params.stats = 'byDateRange';
+                // Last 14 days
+                if (gameDate) {
+                    const startDate = new Date(gameDate);
+                    startDate.setDate(startDate.getDate() - 14);
+                    params.startDate = startDate.toISOString().split('T')[0];
+                    params.endDate = gameDate;
+                }
+                break;
+
+            case 'historical':
+                params.stats = 'career';
+                break;
+
+            case 'current':
+                params.stats = 'byDateRange';
+                // Last 3 days for "current" form
+                const end = new Date();
+
+                if (gameDate) {
+                    const startDate = new Date(gameDate);
+                    startDate.setDate(startDate.getDate() - 3);
+                    params.startDate = startDate.toISOString().split('T')[0];
+                    params.endDate = gameDate;
+                }
+                break;
+        }
+
+        return params;
+    }
+
+    async getGameMetadata(gameId: string): Promise<GameMetadata> {
+        try {
+            const response = await axios.get(
+                `https://statsapi.mlb.com/api/v1.1/game/${gameId}/feed/live`,
+                {
+                    params: {
+                        fields: [
+                            'gamePk',
+                            'link',
+                            'gameType',
+                            'season',
+                            'gameDate',
+                            'status',
+                            'teams',
+                            'venue',
+                            'weather',
+                            'gameInfo',
+                            'flags'
+                        ].join(',')
+                    }
+                }
+            );
+
+            const { gameData, liveData } = response.data;
+
+            return {
+                gamePk: gameData.gamePk,
+                link: gameData.link,
+                gameType: gameData.gameType,
+                season: gameData.season,
+                gameDate: gameData.datetime.dateTime,
+                status: {
+                    abstractGameState: gameData.status.abstractGameState,
+                    codedGameState: gameData.status.codedGameState,
+                    detailedState: gameData.status.detailedState,
+                    statusCode: gameData.status.statusCode,
+                    startTimeTBD: gameData.status.startTimeTBD,
+                    abstractGameCode: gameData.status.abstractGameCode
+                },
+                teams: {
+                    away: {
+                        team: gameData.teams.away,
+                        score: liveData.linescore.teams.away.runs,
+                        isWinner: liveData.linescore.teams.away.runs > liveData.linescore.teams.home.runs,
+                        leagueRecord: gameData.teams.away.record
+                    },
+                    home: {
+                        team: gameData.teams.home,
+                        score: liveData.linescore.teams.home.runs,
+                        isWinner: liveData.linescore.teams.home.runs > liveData.linescore.teams.away.runs,
+                        leagueRecord: gameData.teams.home.record
+                    }
+                },
+                venue: gameData.venue,
+                weather: gameData.weather ? {
+                    condition: gameData.weather.condition,
+                    temp: gameData.weather.temp,
+                    wind: gameData.weather.wind
+                } : undefined,
+                gameInfo: gameData.gameInfo ? {
+                    firstPitch: gameData.gameInfo.firstPitch,
+                    attendance: gameData.gameInfo.attendance,
+                    gameDuration: gameData.gameInfo.gameDuration
+                } : undefined,
+                flags: {
+                    noHitter: gameData.flags.noHitter,
+                    perfectGame: gameData.flags.perfectGame,
+                    awayTeamNoHitter: gameData.flags.awayTeamNoHitter,
+                    awayTeamPerfectGame: gameData.flags.awayTeamPerfectGame,
+                    homeTeamNoHitter: gameData.flags.homeTeamNoHitter,
+                    homeTeamPerfectGame: gameData.flags.homeTeamPerfectGame
+                }
+            };
+        } catch (error) {
+            console.error('Error fetching game metadata:', error);
+            throw new Error('Failed to fetch game metadata');
         }
     }
 } 

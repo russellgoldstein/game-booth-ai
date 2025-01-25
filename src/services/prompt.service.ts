@@ -1,3 +1,5 @@
+import { GameContext } from "src/types/mlb.types";
+
 interface PlayerStats {
     batter?: {
         stats: Array<{
@@ -19,11 +21,94 @@ interface PlayerStats {
     };
 }
 
+interface QuestionAnalysis {
+    type: 'performance' | 'matchup' | 'situation' | 'prediction' | 'strategy' | 'comparison' | 'trend' | 'general';
+    focus: 'batter' | 'pitcher' | 'both' | 'game' | 'team';
+    timeframe: 'current' | 'season' | 'recent' | 'historical';
+    context: {
+        situational: boolean;  // Is game situation relevant?
+        statistical: boolean;  // Are player stats relevant?
+        matchup: boolean;      // Is matchup history relevant?
+        strategic: boolean;    // Is strategic analysis needed?
+    };
+    relevantStats: string[];
+}
+
+interface StatCategories {
+    batting: {
+        basic: string[];
+        advanced: string[];
+        situational: string[];
+        splits: string[];
+        trends: string[];
+    };
+    pitching: {
+        basic: string[];
+        advanced: string[];
+        situational: string[];
+        control: string[];
+        trends: string[];
+    };
+}
+
 export class PromptService {
     private static readonly LANGUAGES = {
         en: 'English',
         es: 'Spanish',
         ja: 'Japanese'
+    };
+
+    private readonly statCategories: StatCategories = {
+        batting: {
+            basic: [
+                'avg', 'obp', 'slg', 'ops',
+                'hits', 'doubles', 'triples', 'homeRuns',
+                'rbi', 'runs', 'gamesPlayed'
+            ],
+            advanced: [
+                'babip', 'totalBases', 'groundOutsToAirouts',
+                'atBatsPerHomeRun', 'plateAppearances'
+            ],
+            situational: [
+                'stolenBases', 'stolenBasePercentage',
+                'groundIntoDoublePlay', 'sacBunts', 'sacFlies',
+                'intentionalWalks', 'hitByPitch'
+            ],
+            splits: [
+                'groundOuts', 'airOuts', 'strikeOuts',
+                'baseOnBalls', 'leftOnBase'
+            ],
+            trends: [
+                'lastGameHits', 'recentAvg', 'recentObp',
+                'recentSlg', 'recentOps', 'currentStreak'
+            ]
+        },
+        pitching: {
+            basic: [
+                'era', 'whip', 'wins', 'losses',
+                'inningsPitched', 'gamesPitched', 'gamesStarted',
+                'completeGames', 'shutouts'
+            ],
+            advanced: [
+                'strikeoutsPer9Inn', 'walksPer9Inn',
+                'hitsPer9Inn', 'homeRunsPer9',
+                'runsScoredPer9', 'pitchesPerInning'
+            ],
+            situational: [
+                'inheritedRunners', 'inheritedRunnersScored',
+                'saveOpportunities', 'saves', 'holds',
+                'blownSaves', 'gamesFinished'
+            ],
+            control: [
+                'strikes', 'strikePercentage',
+                'strikeoutWalkRatio', 'wildPitches',
+                'balks', 'pickoffs', 'totalBases'
+            ],
+            trends: [
+                'lastGamePitches', 'lastGameStrikeouts',
+                'recentEra', 'recentWhip', 'currentStreak'
+            ]
+        }
     };
 
     generateBaseballPrompt(context: {
@@ -34,10 +119,16 @@ export class PromptService {
         language?: keyof typeof PromptService.LANGUAGES
     }) {
         const lang = context.language || 'en';
+        const analysis = this.analyzeQuestion(context.message);
 
-        // Build context sections
+        // Build context sections with relevant stats only
         const gameSection = this.buildGameContext(context.gameContext, lang);
-        const statsSection = this.buildStatsContext(context.playerStats, context.matchupStats, lang);
+        const statsSection = this.buildStatsContext(
+            context.playerStats,
+            context.matchupStats,
+            lang,
+            analysis.relevantStats
+        );
 
         // Combine into final prompt
         const prompt = `
@@ -75,7 +166,124 @@ Remember: It's better to acknowledge limited information than to make assumption
         return prompt.trim();
     }
 
-    private buildGameContext(gameContext: any, language: string): string {
+    private analyzeQuestion(question: string): QuestionAnalysis {
+        question = question.toLowerCase();
+
+        // Default analysis
+        const analysis: QuestionAnalysis = {
+            type: 'general',
+            focus: 'game',
+            timeframe: 'current',
+            context: {
+                situational: false,
+                statistical: false,
+                matchup: false,
+                strategic: false
+            },
+            relevantStats: []
+        };
+
+        // Determine question type
+        if (question.includes('how has') || question.includes('how is') || question.includes('stats')) {
+            analysis.type = 'performance';
+            analysis.timeframe = 'season';
+            analysis.context.statistical = true;
+        } else if (question.includes('matchup') || question.includes('against') || question.includes('face')) {
+            analysis.type = 'matchup';
+            analysis.context.matchup = true;
+            analysis.context.statistical = true;
+        } else if (question.includes('what should') || question.includes('how should')) {
+            analysis.type = 'strategy';
+            analysis.context.strategic = true;
+            analysis.context.situational = true;
+        } else if (question.includes('will') || question.includes('predict') || question.includes('likely')) {
+            analysis.type = 'prediction';
+            analysis.context.statistical = true;
+            analysis.context.situational = true;
+        } else if (question.includes('compare') || question.includes('better') || question.includes('versus')) {
+            analysis.type = 'comparison';
+            analysis.context.statistical = true;
+        } else if (question.includes('trend') || question.includes('lately') || question.includes('recent')) {
+            analysis.type = 'trend';
+            analysis.timeframe = 'recent';
+            analysis.context.statistical = true;
+        } else if (question.includes('situation') || question.includes('count') || question.includes('inning')) {
+            analysis.type = 'situation';
+            analysis.timeframe = 'current';
+            analysis.context.situational = true;
+        }
+
+        // Determine focus
+        if (question.includes('pitcher') || question.includes('throwing') || question.includes('pitch')) {
+            analysis.focus = 'pitcher';
+            analysis.relevantStats = this.getPitcherRelevantStats(analysis.type, analysis.timeframe);
+        } else if (question.includes('batter') || question.includes('hitting') || question.includes('bat')) {
+            analysis.focus = 'batter';
+            analysis.relevantStats = this.getBatterRelevantStats(analysis.type, analysis.timeframe);
+        } else if (question.includes('matchup') || question.includes('against') || question.includes('face')) {
+            analysis.focus = 'both';
+            analysis.relevantStats = [
+                ...this.getPitcherRelevantStats(analysis.type, analysis.timeframe),
+                ...this.getBatterRelevantStats(analysis.type, analysis.timeframe)
+            ];
+        } else if (question.includes('team')) {
+            analysis.focus = 'team';
+        }
+
+        return analysis;
+    }
+
+    private getPitcherRelevantStats(type: QuestionAnalysis['type'], timeframe: QuestionAnalysis['timeframe']): string[] {
+        const { basic, advanced, situational, control, trends } = this.statCategories.pitching;
+
+        switch (type) {
+            case 'performance':
+                return timeframe === 'season'
+                    ? [...basic, ...advanced]
+                    : [...basic, ...trends];
+            case 'situation':
+                return [...situational, ...control];
+            case 'strategy':
+                return [...basic, ...control, ...situational];
+            case 'matchup':
+                return [...basic, ...control];
+            case 'prediction':
+                return [...basic, ...advanced, ...control, ...trends];
+            case 'comparison':
+                return [...basic, ...advanced, ...control];
+            case 'trend':
+                return [...trends, ...basic];
+            default:
+                return basic;
+        }
+    }
+
+    private getBatterRelevantStats(type: QuestionAnalysis['type'], timeframe: QuestionAnalysis['timeframe']): string[] {
+        const { basic, advanced, situational, splits, trends } = this.statCategories.batting;
+
+        switch (type) {
+            case 'performance':
+                return timeframe === 'season'
+                    ? [...basic, ...advanced]
+                    : [...basic, ...trends];
+            case 'situation':
+                return [...situational, ...splits];
+            case 'strategy':
+                return [...basic, ...situational];
+            case 'matchup':
+                return [...basic, ...splits];
+            case 'prediction':
+                return [...basic, ...advanced, ...splits, ...trends];
+            case 'comparison':
+                return [...basic, ...advanced];
+            case 'trend':
+                return [...trends, ...basic];
+            default:
+                return basic;
+        }
+    }
+
+    private buildGameContext(gameContext: GameContext, language: string): string {
         if (!gameContext) return '';
 
         const inningPhrase = language === 'es' ?
@@ -87,26 +295,32 @@ Remember: It's better to acknowledge limited information than to make assumption
         return `
 Game Situation:
 - ${inningPhrase}
-- Count: ${gameContext.balls}-${gameContext.strikes}
-- Outs: ${gameContext.outs}
+- Situation: ${gameContext.count.balls} balls, ${gameContext.count.strikes} strikes, ${gameContext.count.outs} outs
 - Pitcher: ${gameContext.pitcher?.fullName}
 - Batter: ${gameContext.batter?.fullName}
 - Runners: ${this.formatRunners(gameContext.runnersOn)}
+- Current Play: ${gameContext.currentPlayResult.description}
+- Score: ${gameContext.currentPlayResult.homeScore}-${gameContext.currentPlayResult.awayScore}
 `;
     }
 
-    private buildStatsContext(playerStats: any, matchupStats: any, language: string): string {
+    private buildStatsContext(
+        playerStats: any,
+        matchupStats: any,
+        language: string,
+        relevantStats: string[]
+    ): string {
         if (!playerStats && !matchupStats) return '';
 
         return `
 Statistical Context:
 ${matchupStats ? `
 Head-to-Head Statistics:
-${this.formatMatchupStats(matchupStats)}` : ''}
+${this.formatMatchupStats(matchupStats, relevantStats)}` : ''}
 
 ${playerStats ? `
 Season Statistics:
-${this.formatPlayerStats(playerStats)}` : ''}
+${this.formatPlayerStats(playerStats, relevantStats)}` : ''}
 `;
     }
 
@@ -117,14 +331,15 @@ ${this.formatPlayerStats(playerStats)}` : ''}
             .join(', ');
     }
 
-    private formatMatchupStats(stats: any): string {
+    private formatMatchupStats(stats: any, relevantStats: string[]): string {
         // Format based on actual MLB API response structure
         return Object.entries(stats)
+            .filter(([key, _]) => relevantStats.includes(key))
             .map(([key, value]) => `- ${key}: ${value}`)
             .join('\n');
     }
 
-    private formatPlayerStats(stats: PlayerStats): string {
+    private formatPlayerStats(stats: PlayerStats, relevantStats: string[]): string {
         let formattedStats = '';
 
         // Format batter stats if available
@@ -133,11 +348,52 @@ ${this.formatPlayerStats(playerStats)}` : ''}
             const batterStats = batterData.stat;
             formattedStats += `BATTER: ${batterData.player.fullName} (${batterData.team.name})\n`;
             formattedStats += `Season Stats:\n`;
-            formattedStats += `- AVG/OBP/SLG: ${batterStats.avg}/${batterStats.obp}/${batterStats.slg}\n`;
-            formattedStats += `- HR: ${batterStats.homeRuns}, RBI: ${batterStats.rbi}, Runs: ${batterStats.runs}\n`;
-            formattedStats += `- Hits: ${batterStats.hits}, 2B: ${batterStats.doubles}, 3B: ${batterStats.triples}\n`;
-            formattedStats += `- BB: ${batterStats.baseOnBalls}, SO: ${batterStats.strikeOuts}\n`;
-            formattedStats += `- Games: ${batterStats.gamesPlayed}, PA: ${batterStats.plateAppearances}\n\n`;
+
+            // Only include stats that are in the relevantStats array
+            const batterLines = [];
+
+            if (relevantStats.some(stat => ['avg', 'obp', 'slg'].includes(stat))) {
+                batterLines.push(`- AVG/OBP/SLG: ${batterStats.avg}/${batterStats.obp}/${batterStats.slg}`);
+            }
+
+            const basicStats = new Map([
+                ['homeRuns', 'HR'],
+                ['rbi', 'RBI'],
+                ['runs', 'Runs'],
+                ['hits', 'Hits'],
+                ['doubles', '2B'],
+                ['triples', '3B'],
+                ['baseOnBalls', 'BB'],
+                ['strikeOuts', 'SO'],
+                ['gamesPlayed', 'Games'],
+                ['plateAppearances', 'PA'],
+                ['stolenBases', 'SB'],
+                ['groundOuts', 'Ground Outs'],
+                ['airOuts', 'Air Outs'],
+                ['leftOnBase', 'LOB']
+            ]);
+
+            // Group related stats together
+            const statGroups: { [key: string]: string[] } = {};
+
+            for (const [statKey, label] of basicStats) {
+                if (relevantStats.includes(statKey) && batterStats[statKey] !== undefined) {
+                    const groupKey = this.getStatGroupKey(statKey);
+                    if (!statGroups[groupKey]) {
+                        statGroups[groupKey] = [];
+                    }
+                    statGroups[groupKey].push(`${label}: ${batterStats[statKey]}`);
+                }
+            }
+
+            // Add each group's stats as a line
+            for (const stats of Object.values(statGroups)) {
+                if (stats.length > 0) {
+                    batterLines.push(`- ${stats.join(', ')}`);
+                }
+            }
+
+            formattedStats += batterLines.join('\n') + '\n\n';
         }
 
         // Format pitcher stats if available
@@ -146,13 +402,64 @@ ${this.formatPlayerStats(playerStats)}` : ''}
             const pitcherStats = pitcherData.stat;
             formattedStats += `PITCHER: ${pitcherData.player.fullName} (${pitcherData.team.name})\n`;
             formattedStats += `Season Stats:\n`;
-            formattedStats += `- ERA: ${pitcherStats.era}, WHIP: ${pitcherStats.whip}\n`;
-            formattedStats += `- Record: ${pitcherStats.wins}-${pitcherStats.losses}, IP: ${pitcherStats.inningsPitched}\n`;
-            formattedStats += `- SO/9: ${pitcherStats.strikeoutsPer9Inn}, BB/9: ${pitcherStats.walksPer9Inn}\n`;
-            formattedStats += `- Hits: ${pitcherStats.hits}, HR: ${pitcherStats.homeRuns}\n`;
-            formattedStats += `- SO/BB: ${pitcherStats.strikeoutWalkRatio}, Strike%: ${(parseFloat(pitcherStats.strikePercentage) * 100).toFixed(1)}%\n`;
+
+            // Only include stats that are in the relevantStats array
+            const pitcherLines = [];
+
+            const pitcherStatMap = new Map([
+                ['era', 'ERA'],
+                ['whip', 'WHIP'],
+                ['wins', 'W'],
+                ['losses', 'L'],
+                ['inningsPitched', 'IP'],
+                ['strikeoutsPer9Inn', 'SO/9'],
+                ['walksPer9Inn', 'BB/9'],
+                ['hits', 'Hits'],
+                ['homeRuns', 'HR'],
+                ['strikeoutWalkRatio', 'SO/BB'],
+                ['strikePercentage', 'Strike%'],
+                ['pitchesPerInning', 'Pitches/IP'],
+                ['inheritedRunners', 'IR'],
+                ['inheritedRunnersScored', 'IRS']
+            ]);
+
+            // Group related stats together
+            const statGroups: { [key: string]: string[] } = {};
+
+            for (const [statKey, label] of pitcherStatMap) {
+                if (relevantStats.includes(statKey) && pitcherStats[statKey] !== undefined) {
+                    const groupKey = this.getStatGroupKey(statKey);
+                    if (!statGroups[groupKey]) {
+                        statGroups[groupKey] = [];
+                    }
+                    const value = statKey === 'strikePercentage'
+                        ? `${(parseFloat(pitcherStats[statKey]) * 100).toFixed(1)}%`
+                        : pitcherStats[statKey];
+                    statGroups[groupKey].push(`${label}: ${value}`);
+                }
+            }
+
+            // Add each group's stats as a line
+            for (const stats of Object.values(statGroups)) {
+                if (stats.length > 0) {
+                    pitcherLines.push(`- ${stats.join(', ')}`);
+                }
+            }
+
+            formattedStats += pitcherLines.join('\n');
         }
 
         return formattedStats || 'No stats available';
+    }
+
+    private getStatGroupKey(statKey: string): string {
+        if (['avg', 'obp', 'slg', 'ops'].includes(statKey)) return 'rates';
+        if (['hits', 'doubles', 'triples', 'homeRuns'].includes(statKey)) return 'hits';
+        if (['rbi', 'runs'].includes(statKey)) return 'production';
+        if (['baseOnBalls', 'strikeOuts'].includes(statKey)) return 'discipline';
+        if (['era', 'whip'].includes(statKey)) return 'rates';
+        if (['wins', 'losses', 'saves', 'holds'].includes(statKey)) return 'results';
+        if (['strikeoutsPer9Inn', 'walksPer9Inn'].includes(statKey)) return 'rates';
+        return 'other';
     }
 } 

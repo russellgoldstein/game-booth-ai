@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { VertexAIService } from '../services/vertexai.service';
 import { MLBService } from '../services/mlb.service';
+import { QuestionAnalyzer } from '../services/question-analyzer.service';
+import { PromptService } from '../services/prompt.service';
 import { GameContext } from '../types/mlb.types';
 import { format } from 'date-fns';
 import axios from 'axios';
@@ -8,6 +10,8 @@ import axios from 'axios';
 const router = Router();
 const vertexAI = new VertexAIService();
 const mlbService = new MLBService();
+const questionAnalyzer = new QuestionAnalyzer();
+const promptService = new PromptService();
 
 interface ChatRequest {
     message: string;
@@ -20,44 +24,39 @@ router.post('/', async (req: Request<{}, {}, ChatRequest>, res: Response) => {
     try {
         const { message, language = 'en', gameId } = req.body;
 
-        // Gather all context
-        let gameContext, playerStats, matchupStats;
-
-        if (gameId) {
-            gameContext = await mlbService.getCurrentGameContext(gameId);
-
-            if (gameContext.pitcher && gameContext.batter) {
-                matchupStats = await mlbService.getMatchupStats(
-                    gameContext.batter.id,
-                    gameContext.pitcher.id
-                );
-
-                // Get individual player stats
-                const [batterStats, pitcherStats] = await Promise.all([
-                    mlbService.getPlayerStats(gameContext.batter.id),
-                    mlbService.getPlayerStats(gameContext.pitcher.id)
-                ]);
-
-                playerStats = {
-                    batter: batterStats,
-                    pitcher: pitcherStats
-                };
-            }
+        if (!gameId) {
+            throw new Error('Game ID is required');
         }
 
-        console.log(JSON.stringify(gameContext, null, 2));
-        console.log(JSON.stringify(playerStats, null, 2));
-        console.log(JSON.stringify(matchupStats, null, 2));
-        // Generate AI response with all context
-        const response = await vertexAI.generateResponse({
+        const gameMetadata = await mlbService.getGameMetadata(gameId);
+
+        // First, analyze the question to determine what data we need
+        const analysis = await questionAnalyzer.analyze(message);
+
+        console.log('Analysis:', JSON.stringify(analysis, null, 2));
+
+        // Get the game context
+        const gameContext = await mlbService.getCurrentGameContext(gameId);
+
+        console.log('Game Context:', JSON.stringify(gameContext, null, 2));
+        // Gather only the required data based on the analysis
+        const requiredData = await mlbService.getRequiredData(analysis, gameId, gameContext, gameMetadata);
+        console.log('Required Data:', JSON.stringify(requiredData, null, 2));
+        // Generate the prompt with the targeted data
+        const prompt = promptService.generateBaseballPrompt({
             message,
-            gameContext,
-            playerStats,
-            matchupStats,
+            analysis,
+            ...requiredData,
             language
         });
 
-        res.json({ response, gameContext });
+        // Generate AI response using the crafted prompt
+        const response = await vertexAI.generateResponse(prompt);
+
+        res.json({
+            response,
+            gameContext: requiredData.gameContext
+        });
     } catch (error) {
         console.error('Error in chat endpoint:', error);
         res.status(500).json({ error: 'Failed to generate response' });

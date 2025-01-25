@@ -35,22 +35,6 @@ router.get('/pitches', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch pitch data' });
     }
 });
-
-// Get pitching tendencies for heat map
-router.get('/tendencies', async (req, res) => {
-    try {
-        const { pitcherId } = req.query;
-        const stats = await mlbService.getPlayerStats(pitcherId as string);
-
-        // Process pitch location data into heat map format
-        const tendencies = processPitchLocations(stats);
-        res.json(tendencies);
-    } catch (error) {
-        console.error('Error fetching tendencies:', error);
-        res.status(500).json({ error: 'Failed to fetch tendencies' });
-    }
-});
-
 // Get matchup-specific visualizations
 router.get('/matchup', async (req, res) => {
     try {

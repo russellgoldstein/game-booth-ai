@@ -1,6 +1,7 @@
 import { VertexAI } from '@google-cloud/vertexai';
 import dotenv from 'dotenv';
 import { PromptService } from './prompt.service';
+import { QuestionAnalysis } from 'src/types/question-analyzer.types';
 
 // Load environment variables
 dotenv.config();
@@ -24,17 +25,8 @@ export class VertexAIService {
         this.promptService = new PromptService();
     }
 
-    async generateResponse(context: {
-        message: string,
-        gameContext?: any,
-        playerStats?: any,
-        matchupStats?: any,
-        language?: string
-    }): Promise<string> {
+    async generateResponse(prompt: string): Promise<string> {
         try {
-            const language = context.language as 'en' | 'es' | 'ja' | undefined;
-            const prompt = this.promptService.generateBaseballPrompt({ ...context, language });
-
             const generativeModel = this.vertexAI.preview.getGenerativeModel({
                 model: this.model,
             });
