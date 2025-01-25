@@ -1,0 +1,6 @@
+.table-container {
+  display: block; /* Enables scrolling */
+  overflow-x: auto; /* Shows scrollbar horizontally when needed */
+  max-width: 100%; /* Ensures the table does not exceed the parent container's width */
+  padding: 1rem;
+}

@@ -1,0 +1,39 @@
+{
+  "name": "mantine-vite-template",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "npm run lint:eslint && npm run lint:stylelint",
+    "lint:eslint": "eslint . --ext .ts,.tsx --cache",
+    "lint:stylelint": "stylelint '**/*.css' --cache",
+    "prettier": "prettier --check \"**/*.{ts,tsx}\"",
+    "prettier:write": "prettier --write \"**/*.{ts,tsx}\"",
+    "vitest": "vitest run",
+    "vitest:watch": "vitest",
+    "test": "npm run typecheck && npm run prettier && npm run lint && npm run vitest && npm run build",
+    "storybook": "storybook dev -p 6006",
+    "storybook:build": "storybook build"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^6.4.1",
+    "@mui/material": "^6.4.1",
+    "@tanstack/react-query": "^5.64.2",
+    "@visx/visx": "^3.12.0",
+    "axios": "^1.7.9",
+    "d3": "^7.9.0",
+    "react-router-dom": "^7.1.3",
+    "recharts": "^2.15.0"
+  },
+  "packageManager": "yarn@4.4.0",
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.11"
+  }
+}
