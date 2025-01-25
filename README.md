@@ -1,3 +1,1 @@
-# app-template# app-template
-# baseball-sim-game
-# webapp-template
+# Game Booth AI
