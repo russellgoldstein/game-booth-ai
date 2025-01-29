@@ -166,10 +166,7 @@ export default function GameContext({ gameId, onGameSelect, onGameContextUpdate 
             const aiMessage = {
                 id: Date.now().toString(),
                 sender: 'ai',
-                text: `${data.commentary.summary}\n\n${data.commentary.analysis}${data.commentary.keyMoment
-                    ? `\n\nKey Moment: ${data.commentary.significance}`
-                    : ''
-                    }`,
+                text: `${data.commentary}`,
                 gameContext: updatedContext,
                 isCommentary: true
             };

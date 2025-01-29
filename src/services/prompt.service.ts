@@ -504,20 +504,18 @@ ${this.formatPlayerStats(playerStats, relevantStats)}` : ''}
             As a baseball commentator, provide analysis for this at-bat:
             
             Situation: ${context.gameContext.isTopInning ? 'Top' : 'Bottom'} of the ${context.gameContext.inning}${this.getInningOrdinal(context.gameContext.inning)},
+            ${context.count.balls} balls, ${context.count.strikes} strikes, ${context.count.outs} outs
             Score: ${context.gameContext.score.away}-${context.gameContext.score.home}
             ${context.matchup.pitcher} pitching to ${context.matchup.batter}
             
             Pitch Sequence:
             ${context.pitches.map((pitch, i) =>
-            `Pitch ${i + 1}: ${pitch.type} (${pitch.speed} mph) - ${pitch.result}`
+            `Pitch ${i + 1}: ${JSON.stringify(pitch.type)} (${pitch.speed} mph) - ${pitch.result}`
         ).join('\n')}
             
             Final Result: ${context.result.description}
             
-            Please provide:
-            1. A brief play-by-play summary
-            2. Strategic analysis of the at-bat
-            3. Assessment of its significance in the game
+            Please provide a brief commentary on the at-bat of no more than 50 words, with the at bat result and a short commentary on the at-bat. Do not include any other information not directly related to the at-bat. Use only the information provided in the context.
         `;
 
         return prompt;

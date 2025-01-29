@@ -318,7 +318,6 @@ export class MLBService {
             const response = await axios.get(
                 `${this.baseUrl}/game/${gameId}/playByPlay`,
             );
-            console.log('At-bat:', JSON.stringify(response.data, null, 2));
 
             const { allPlays } = response.data;
 

@@ -73,25 +73,15 @@ router.get('/:gameId/atbat/:atBatNumber', async (req, res) => {
             }
         });
 
+        console.log(commentaryPrompt);
         // Get the AI response
         const aiResponse = await vertexAI.generateResponse(commentaryPrompt);
 
-        // Structure the commentary
-        const commentary = {
-            summary: aiResponse.split('\n\n')[0] || '',
-            analysis: aiResponse.split('\n\n')[1] || '',
-            keyMoment: atBat.about.isScoringPlay || false,
-            significance: aiResponse.split('\n\n')[2] || ''
-        };
 
         // Return both the at-bat data and the structured commentary
         res.json({
             atBat,
-            commentary: {
-                ...commentary,
-                text: `${commentary.summary}\n\n${commentary.analysis}${commentary.keyMoment ? `\n\nKey Moment: ${commentary.significance}` : ''
-                    }`
-            }
+            commentary: aiResponse
         });
 
     } catch (error) {
