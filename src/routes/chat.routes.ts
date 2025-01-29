@@ -3,12 +3,14 @@ import { VertexAIService } from '../services/vertexai.service';
 import { MLBService } from '../services/mlb.service';
 import { QuestionAnalyzer } from '../services/question-analyzer.service';
 import { PromptService } from '../services/prompt.service';
-
+import { StatcastService } from '../services/statcast.service';
+import { ServiceContainer } from 'src/services';
 const router = Router();
 const vertexAI = new VertexAIService();
 const mlbService = new MLBService();
 const questionAnalyzer = new QuestionAnalyzer();
-const promptService = new PromptService();
+const promptService = new PromptService(new StatcastService(
+));
 
 interface ChatRequest {
     message: string;

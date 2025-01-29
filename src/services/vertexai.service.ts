@@ -1,7 +1,5 @@
 import { VertexAI } from '@google-cloud/vertexai';
 import dotenv from 'dotenv';
-import { PromptService } from './prompt.service';
-import { QuestionAnalysis } from 'src/types/question-analyzer.types';
 
 // Load environment variables
 dotenv.config();
@@ -9,7 +7,6 @@ dotenv.config();
 export class VertexAIService {
     private vertexAI: VertexAI;
     private model: string = 'gemini-pro';
-    private promptService: PromptService;
 
     constructor() {
         const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
@@ -22,7 +19,6 @@ export class VertexAIService {
             location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
         });
 
-        this.promptService = new PromptService();
     }
 
     async generateResponse(prompt: string): Promise<string> {

@@ -8,32 +8,15 @@ import {
     FormControl,
     InputLabel,
     Paper,
-    Chip,
     CircularProgress,
-    TextField,
     Button
 } from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { useSearchParams } from 'react-router-dom';
-import { GameContext as GameContextType } from '../types/chat.types';
-import dayjs, { Dayjs } from 'dayjs';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 
 const GameInfoContainer = styled(Paper)(({ theme }) => ({
     padding: theme.spacing(2),
     marginBottom: theme.spacing(2)
-}));
-
-const StatsRow = styled(Box)(({ theme }) => ({
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: theme.spacing(1),
-    borderRadius: theme.shape.borderRadius,
-    backgroundColor: theme.palette.grey[50]
 }));
 
 interface Game {
@@ -46,13 +29,6 @@ interface Game {
     status: { abstractGameState: string };
 }
 
-interface AtBatCommentary {
-    summary: string;
-    analysis: string;
-    keyMoment: boolean;
-    significance: string;
-}
-
 interface Props {
     gameId?: string;
     onGameSelect: (gameId: string) => void;
@@ -60,27 +36,18 @@ interface Props {
 }
 
 export default function GameContext({ gameId, onGameSelect, onGameContextUpdate }: Props) {
-    const [searchParams] = useSearchParams();
-    const isDemo = searchParams.get('demo') === 'true';
-    const [selectedDate, setSelectedDate] = useState<Dayjs | null>(dayjs('2023-10-01'));
     const [games, setGames] = useState<Game[]>([]);
     const [loading, setLoading] = useState(false);
-    const [gameContext, setGameContext] = useState<GameContextType | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [autoAdvance, setAutoAdvance] = useState(false);
     const [currentAtBat, setCurrentAtBat] = useState(0);
-    const [commentary, setCommentary] = useState<AtBatCommentary | null>(null);
 
     const fetchGames = async () => {
         try {
             setLoading(true);
             setError(null);
 
-            const endpoint = isDemo && selectedDate
-                ? `/api/games/date/${selectedDate.format('YYYY-MM-DD')}`
-                : '/api/games/today';
-
-            const response = await fetch(endpoint);
+            const response = await fetch('/api/games/date/2024-09-29');
             if (!response.ok) {
                 throw new Error('Failed to fetch games');
             }
@@ -97,10 +64,8 @@ export default function GameContext({ gameId, onGameSelect, onGameContextUpdate 
     const handleRestartGame = useCallback(async () => {
         if (!gameId) return;
         setCurrentAtBat(0);
-        // Call API to reset game state
         try {
             await fetch(`/api/games/${gameId}/restart`, { method: 'POST' });
-            // Refetch game data
             fetchGames();
         } catch (err) {
             setError('Failed to restart game');
@@ -110,33 +75,46 @@ export default function GameContext({ gameId, onGameSelect, onGameContextUpdate 
     const handleNextAtBat = useCallback(async () => {
         if (!gameId) return;
         try {
-            const response = await fetch(`/api/games/${gameId}/atbat/${currentAtBat + 1}`);
-            if (!response.ok) {
-                throw new Error('Failed to fetch next at-bat');
-            }
-            const data = await response.json();
+            // First, get the preview
+            const previewResponse = await fetch(`/api/games/${gameId}/atbat/${currentAtBat + 1}/preview`);
+            if (!previewResponse.ok) throw new Error('Failed to fetch preview');
+            const previewData = await previewResponse.json();
 
-            // Create updated game context from at-bat data
+            // Dispatch preview message
+            const previewMessage = {
+                id: Date.now().toString(),
+                sender: 'ai',
+                text: previewData.preview,
+                isPreview: true
+            };
+            window.dispatchEvent(new CustomEvent('newCommentary', { detail: previewMessage }));
+
+            // Get the at-bat data
+            const atBatResponse = await fetch(`/api/games/${gameId}/atbat/${currentAtBat + 1}`);
+            if (!atBatResponse.ok) throw new Error('Failed to fetch at-bat');
+            const { atBat } = await atBatResponse.json();
+
+            // Update game context
             const updatedContext = {
                 gameId,
-                inning: data.atBat.about.inning,
-                isTopInning: data.atBat.about.isTopInning,
+                inning: atBat.about.inning,
+                isTopInning: atBat.about.isTopInning,
                 count: {
-                    balls: data.atBat.count.balls,
-                    strikes: data.atBat.count.strikes,
-                    outs: data.atBat.count.outs
+                    balls: atBat.count.balls,
+                    strikes: atBat.count.strikes,
+                    outs: atBat.count.outs
                 },
                 pitcher: {
-                    id: data.atBat.matchup.pitcher.id,
-                    fullName: data.atBat.matchup.pitcher.fullName,
-                    stats: data.atBat.matchup.pitcher.stats
+                    id: atBat.matchup.pitcher.id,
+                    fullName: atBat.matchup.pitcher.fullName,
+                    stats: atBat.matchup.pitcher.stats
                 },
                 batter: {
-                    id: data.atBat.matchup.batter.id,
-                    fullName: data.atBat.matchup.batter.fullName,
-                    stats: data.atBat.matchup.batter.stats
+                    id: atBat.matchup.batter.id,
+                    fullName: atBat.matchup.batter.fullName,
+                    stats: atBat.matchup.batter.stats
                 },
-                runnersOn: data.atBat.runners
+                runnersOn: atBat.runners
                     .filter((runner: any) => runner.movement.start)
                     .map((runner: any) => ({
                         base: runner.movement.start,
@@ -146,36 +124,31 @@ export default function GameContext({ gameId, onGameSelect, onGameContextUpdate 
                         }
                     })),
                 score: {
-                    away: data.atBat.result.awayScore,
-                    home: data.atBat.result.homeScore
+                    away: atBat.result.awayScore,
+                    home: atBat.result.homeScore
                 }
             };
 
-            // Update the current at-bat counter
-            setCurrentAtBat(prev => prev + 1);
-
-            // Set the commentary
-            setCommentary(data.commentary);
-
-            // Notify parent component of the updated context
             if (onGameContextUpdate) {
                 onGameContextUpdate(updatedContext);
             }
 
-            // Create and dispatch AI message with commentary
-            const aiMessage = {
-                id: Date.now().toString(),
+            // Get the commentary
+            const commentaryResponse = await fetch(`/api/games/${gameId}/atbat/${currentAtBat + 1}/commentary`);
+            if (!commentaryResponse.ok) throw new Error('Failed to fetch commentary');
+            const commentaryData = await commentaryResponse.json();
+
+            // Dispatch result commentary
+            const commentaryMessage = {
+                id: Date.now().toString() + '-result',
                 sender: 'ai',
-                text: `${data.commentary}`,
+                text: commentaryData.commentary,
                 gameContext: updatedContext,
                 isCommentary: true
             };
+            window.dispatchEvent(new CustomEvent('newCommentary', { detail: commentaryMessage }));
 
-            // Dispatch a custom event with the AI message
-            const event = new CustomEvent('newCommentary', {
-                detail: aiMessage
-            });
-            window.dispatchEvent(event);
+            setCurrentAtBat(prev => prev + 1);
 
         } catch (err) {
             setError('Failed to advance to next at-bat');
@@ -183,36 +156,17 @@ export default function GameContext({ gameId, onGameSelect, onGameContextUpdate 
         }
     }, [gameId, currentAtBat, onGameContextUpdate]);
 
-    // Effect for auto-advancing
     useEffect(() => {
         let interval: NodeJS.Timeout;
-        if (isDemo && autoAdvance && gameId) {
+        if (autoAdvance && gameId) {
             interval = setInterval(handleNextAtBat, 30000);
         }
         return () => clearInterval(interval);
-    }, [isDemo, autoAdvance, gameId, handleNextAtBat]);
+    }, [autoAdvance, gameId, handleNextAtBat]);
 
-    // Effect for fetching games
     useEffect(() => {
         fetchGames();
-    }, [isDemo, selectedDate]);
-
-    // Fetch game context when gameId changes
-    useEffect(() => {
-        if (!gameId) return;
-
-        const fetchGameContext = async () => {
-            try {
-                const response = await fetch(`http://localhost:3030/api/chat/games/${gameId}/context`);
-                const data = await response.json();
-                setGameContext(data);
-            } catch (err) {
-                setError('Failed to fetch game context');
-            }
-        };
-
-        fetchGameContext();
-    }, [gameId]);
+    }, []);
 
     if (loading) {
         return <CircularProgress />;
@@ -225,49 +179,26 @@ export default function GameContext({ gameId, onGameSelect, onGameContextUpdate 
     return (
         <GameInfoContainer>
             <Typography variant="h6" gutterBottom>
-                Game Information
+                MLB 2024 Regular Season Final Day
             </Typography>
 
-            {isDemo && (
-                <Box sx={{ mb: 2 }}>
-                    <LocalizationProvider dateAdapter={AdapterDayjs}>
-                        <DatePicker
-                            label="Select Game Date"
-                            value={selectedDate}
-                            onChange={(newDate) => setSelectedDate(newDate)}
-                            minDate={dayjs('2024-03-30')}
-                            maxDate={dayjs('2024-10-01')}
-                            disableFuture
-                            views={['year', 'month', 'day']}
-                            sx={{ width: '100%' }}
-                            slotProps={{
-                                textField: {
-                                    helperText: 'MM/DD/YYYY',
-                                },
-                            }}
-                            defaultValue={dayjs('2023-10-01')}
-                        />
-                    </LocalizationProvider>
-
-                    {gameId && (
-                        <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
-                            <Button
-                                variant="contained"
-                                startIcon={<RestartAltIcon />}
-                                onClick={handleRestartGame}
-                            >
-                                Restart Game
-                            </Button>
-                            <Button
-                                variant="contained"
-                                color={autoAdvance ? "error" : "primary"}
-                                startIcon={<PlayArrowIcon />}
-                                onClick={() => setAutoAdvance(!autoAdvance)}
-                            >
-                                {autoAdvance ? "Stop Auto-Advance" : "Auto-Advance"}
-                            </Button>
-                        </Box>
-                    )}
+            {gameId && (
+                <Box sx={{ mb: 2, display: 'flex', gap: 2 }}>
+                    <Button
+                        variant="contained"
+                        startIcon={<RestartAltIcon />}
+                        onClick={handleRestartGame}
+                    >
+                        Restart Game
+                    </Button>
+                    <Button
+                        variant="contained"
+                        color={autoAdvance ? "error" : "primary"}
+                        startIcon={<PlayArrowIcon />}
+                        onClick={() => setAutoAdvance(!autoAdvance)}
+                    >
+                        {autoAdvance ? "Stop Auto-Advance" : "Auto-Advance"}
+                    </Button>
                 </Box>
             )}
 
@@ -277,7 +208,7 @@ export default function GameContext({ gameId, onGameSelect, onGameContextUpdate 
                     value={gameId || ''}
                     onChange={(e) => {
                         onGameSelect(e.target.value);
-                        setCurrentAtBat(0); // Reset at-bat counter when game changes
+                        setCurrentAtBat(0);
                     }}
                     label="Select Game"
                 >

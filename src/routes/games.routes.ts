@@ -43,12 +43,48 @@ router.post('/:gameId/restart', async (req, res) => {
 router.get('/:gameId/atbat/:atBatNumber', async (req, res) => {
     try {
         const { gameId, atBatNumber } = req.params;
+        const atBat = await mlbService.getAtBat(gameId, parseInt(atBatNumber));
+        res.json({ atBat });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch at-bat data' });
+    }
+});
 
-        // Fetch the at-bat data
+router.get('/:gameId/atbat/:atBatNumber/preview', async (req, res) => {
+    try {
+        const { gameId, atBatNumber } = req.params;
         const atBat = await mlbService.getAtBat(gameId, parseInt(atBatNumber));
 
-        // Generate AI commentary
-        const commentaryPrompt = await promptService.generateAtBatCommentary({
+        console.log(JSON.stringify(atBat, null, 2));
+        const prompt = await promptService.generateAtBatPreview({
+            matchup: {
+                batter: atBat.matchup.batter,
+                pitcher: atBat.matchup.pitcher
+            },
+            gameContext: {
+                inning: atBat.about.inning,
+                isTopInning: atBat.about.isTopInning,
+                outs: atBat.count.outs,
+                score: {
+                    away: atBat.result.awayScore,
+                    home: atBat.result.homeScore
+                }
+            }
+        });
+
+        const commentary = await vertexAI.generateResponse(prompt);
+        res.json({ preview: commentary });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to generate at-bat preview' });
+    }
+});
+
+router.get('/:gameId/atbat/:atBatNumber/commentary', async (req, res) => {
+    try {
+        const { gameId, atBatNumber } = req.params;
+        const atBat = await mlbService.getAtBat(gameId, parseInt(atBatNumber));
+
+        const prompt = await promptService.generateAtBatCommentary({
             result: atBat.result,
             matchup: {
                 batter: atBat.matchup.batter.fullName,
@@ -73,20 +109,10 @@ router.get('/:gameId/atbat/:atBatNumber', async (req, res) => {
             }
         });
 
-        console.log(commentaryPrompt);
-        // Get the AI response
-        const aiResponse = await vertexAI.generateResponse(commentaryPrompt);
-
-
-        // Return both the at-bat data and the structured commentary
-        res.json({
-            atBat,
-            commentary: aiResponse
-        });
-
+        const commentary = await vertexAI.generateResponse(prompt);
+        res.json({ commentary });
     } catch (error) {
-        console.error('Error fetching at-bat:', error);
-        res.status(500).json({ error: 'Failed to fetch at-bat data and commentary' });
+        res.status(500).json({ error: 'Failed to generate at-bat commentary' });
     }
 });
 

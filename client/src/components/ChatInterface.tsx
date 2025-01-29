@@ -12,7 +12,6 @@ import {
 import SendIcon from '@mui/icons-material/Send';
 import { ChatMessage as ChatMessageType } from '../types/chat.types';
 import ChatMessageComponent from './ChatMessage';
-import StatsVisualization from './StatsVisualization';
 import GameSituation from './GameSituation';
 
 interface GameContext {
@@ -75,6 +74,7 @@ const SidePanel = styled(Paper)(({ theme }) => ({
 }));
 
 export default function ChatInterface({ gameContext }: Props) {
+    console.log(gameContext);
     const [messages, setMessages] = useState<ChatMessageType[]>([]);
     const [input, setInput] = useState('');
     const [language, setLanguage] = useState('en');
@@ -123,7 +123,7 @@ export default function ChatInterface({ gameContext }: Props) {
                 id: Date.now().toString(),
                 text: data.response,
                 sender: 'ai',
-                gameContext: gameContext, // Use the current game context
+                gameContext: gameContext,
                 visualizations: data.visualizations
             };
 
@@ -141,7 +141,7 @@ export default function ChatInterface({ gameContext }: Props) {
                         <ChatMessageComponent
                             key={message.id}
                             message={message}
-                            isCommentary={message.isCommentary}
+                            commentary={message.gameContext?.commentary}
                         />
                     ))}
                 </Box>

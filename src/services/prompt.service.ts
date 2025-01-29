@@ -1,4 +1,6 @@
 import { GameContext } from "src/types/mlb.types";
+import { StatcastService } from "./statcast.service";
+import { ServiceContainer } from "./container";
 
 interface PlayerStats {
     batter?: {
@@ -87,6 +89,22 @@ interface Commentary {
     significance: string;
 }
 
+interface PreviewContext {
+    matchup: {
+        batter: string;
+        pitcher: string;
+    };
+    gameContext: {
+        inning: number;
+        isTopInning: boolean;
+        outs: number;
+        score: {
+            away: number;
+            home: number;
+        };
+    };
+}
+
 export class PromptService {
     private static readonly LANGUAGES = {
         en: 'English',
@@ -146,6 +164,12 @@ export class PromptService {
             ]
         }
     };
+
+    constructor(
+        private statcastService: StatcastService = new StatcastService(
+            ServiceContainer.getInstance().statcastPlayRepository
+        )
+    ) { }
 
     generateBaseballPrompt(context: {
         message: string,
@@ -501,7 +525,7 @@ ${this.formatPlayerStats(playerStats, relevantStats)}` : ''}
 
     generateAtBatCommentary(context: AtBatContext): string {
         const prompt = `
-            As a baseball commentator, provide analysis for this at-bat:
+            As a baseball commentator, provide analysis for this at-bat result:
             
             Situation: ${context.gameContext.isTopInning ? 'Top' : 'Bottom'} of the ${context.gameContext.inning}${this.getInningOrdinal(context.gameContext.inning)},
             ${context.count.balls} balls, ${context.count.strikes} strikes, ${context.count.outs} outs
@@ -516,6 +540,16 @@ ${this.formatPlayerStats(playerStats, relevantStats)}` : ''}
             Final Result: ${context.result.description}
             
             Please provide a brief commentary on the at-bat of no more than 50 words, with the at bat result and a short commentary on the at-bat. Do not include any other information not directly related to the at-bat. Use only the information provided in the context.
+        `;
+
+        return prompt;
+    }
+
+    generateAtBatPreviewCommentary(context: AtBatContext): string {
+        const prompt = `
+            As a baseball commentator, provide a preview of the at-bat:
+            
+            Situation: ${context.gameContext.isTopInning ? 'Top' : 'Bottom'} of the ${context.gameContext.inning}${this.getInningOrdinal(context.gameContext.inning)},
         `;
 
         return prompt;
@@ -536,5 +570,40 @@ ${this.formatPlayerStats(playerStats, relevantStats)}` : ''}
         );
 
         return isLateInning && (isCloseSituation || hasRunnersInScoringPosition);
+    }
+
+    async generateAtBatPreview(context: PreviewContext): Promise<string> {
+        // Get the matchup stats
+        const matchupStats = await this.statcastService.getBatterVsPitcherStats(
+            1234567890,
+            1234567890
+        );
+
+        const matchupHistory = this.statcastService.formatMatchupStats(matchupStats);
+
+        console.log(JSON.stringify(matchupStats, null, 2));
+        console.log(JSON.stringify(matchupHistory, null, 2));
+
+        const prompt = `
+            As a baseball commentator, set up this upcoming at-bat:
+            
+            Situation: ${context.gameContext.isTopInning ? 'Top' : 'Bottom'} of the ${context.gameContext.inning}${this.getInningOrdinal(context.gameContext.inning)},
+            Score: ${context.gameContext.score.away}-${context.gameContext.score.home}
+            ${context.matchup.pitcher} on the mound
+            ${context.matchup.batter} stepping into the box
+            ${context.gameContext.outs} out(s)
+
+            Career Matchup History:
+            ${matchupHistory}
+
+            Please provide a brief, engaging preview of this matchup that:
+            1. Highlights any notable context about the game situation
+            2. References the specific history between these players
+            3. Sets up the drama of the moment
+            
+            Keep the response concise and focused on building anticipation for the at-bat.
+        `;
+
+        return prompt;
     }
 } 
