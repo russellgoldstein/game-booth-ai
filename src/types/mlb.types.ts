@@ -15,6 +15,7 @@ export interface GameContext {
     count: Count;
     pitcher: Player;
     batter: Player;
+    gameMetadata: GameMetadata;
     currentPlayResult: CurrentPlayResult;
     runnersOn: {
         base: string;
@@ -207,72 +208,174 @@ export interface CurrentPlay {
 }
 
 
-export
-    interface GameMetadata {
+export interface GameMetadata {
+    copyright: string;
     gamePk: number;
     link: string;
-    gameType: string;
-    season: string;
+    metaData: {
+        wait: number;
+        timeStamp: string;
+        gameEvents: string[];
+        logicalEvents: string[];
+    };
+    gameData: {
+        game: {
+            pk: number;
+            type: string;
+            doubleHeader: 'N' | 'Y';
+            id: string;
+            gamedayType: string;
+            tiebreaker: 'N' | 'Y';
+            gameNumber: number;
+            calendarEventID: string;
+            season: string;
+            seasonDisplay: string;
+        };
+        datetime: {
+            dateTime: string;
+            originalDate: string;
+            officialDate: string;
+            dayNight: 'day' | 'night';
+            time: string;
+            ampm: 'AM' | 'PM';
+        };
+        status: {
+            abstractGameState: 'Live' | 'Final' | 'Preview' | 'Postponed' | 'Suspended';
+            codedGameState: string;
+            detailedState: string;
+            statusCode: string;
+            startTimeTBD: boolean;
+            abstractGameCode: string;
+        };
+        teams: {
+            away: Record<string, any>; // We can expand this if needed
+            home: Record<string, any>;
+        };
+        players: Record<string, any>; // Map of player IDs to player data
+        venue: {
+            id: number;
+            name: string;
+            link: string;
+            location: Record<string, any>;
+            timeZone: Record<string, any>;
+            fieldInfo: Record<string, any>;
+            active: boolean;
+            season: string;
+        };
+        officialVenue: {
+            id: number;
+            link: string;
+        };
+        weather: {
+            condition: string;
+            temp: string;
+            wind: string;
+        };
+        gameInfo: {
+            attendance: number;
+            firstPitch: string;
+            gameDurationMinutes: number;
+        };
+        review: {
+            hasChallenges: boolean;
+            away: Record<string, any>;
+            home: Record<string, any>;
+        };
+        flags: {
+            noHitter: boolean;
+            perfectGame: boolean;
+            awayTeamNoHitter: boolean;
+            awayTeamPerfectGame: boolean;
+            homeTeamNoHitter: boolean;
+            homeTeamPerfectGame: boolean;
+        };
+        alerts: any[];
+        probablePitchers: {
+            away: Record<string, any>;
+            home: Record<string, any>;
+        };
+        officialScorer: {
+            id: number;
+            fullName: string;
+            link: string;
+        };
+        primaryDatacaster: {
+            id: number;
+            fullName: string;
+            link: string;
+        };
+        moundVisits: {
+            away: Record<string, any>;
+            home: Record<string, any>;
+        };
+    };
+    liveData: {
+        plays: {
+            allPlays: any[];
+            currentPlay: Record<string, any>;
+            scoringPlays: any[];
+            playsByInning: any[];
+        };
+        linescore: {
+            currentInning: number;
+            currentInningOrdinal: string;
+            inningState: string;
+            inningHalf: string;
+            isTopInning: boolean;
+            scheduledInnings: number;
+            innings: any[];
+            teams: Record<string, any>;
+            defense: Record<string, any>;
+            offense: Record<string, any>;
+            balls: number;
+            strikes: number;
+            outs: number;
+        };
+        boxscore: {
+            teams: Record<string, any>;
+            officials: any[];
+            info: any[];
+            pitchingNotes: any[];
+            topPerformers: any[];
+        };
+        decisions: {
+            winner: Record<string, any>;
+            loser: Record<string, any>;
+            save: Record<string, any>;
+        };
+        leaders: {
+            hitDistance: Record<string, any>;
+            hitSpeed: Record<string, any>;
+            pitchSpeed: Record<string, any>;
+        };
+    };
+}
+
+export interface Game {
+    gamePk: number;
     gameDate: string;
     status: {
         abstractGameState: 'Live' | 'Final' | 'Preview' | 'Postponed' | 'Suspended';
-        codedGameState: string;
         detailedState: string;
-        statusCode: string;
-        startTimeTBD: boolean;
-        abstractGameCode: string;
     };
     teams: {
         away: {
             team: {
                 id: number;
                 name: string;
-                link: string;
             };
             score: number;
-            isWinner: boolean;
-            leagueRecord: {
-                wins: number;
-                losses: number;
-                pct: string;
-            };
         };
         home: {
             team: {
                 id: number;
                 name: string;
-                link: string;
             };
             score: number;
-            isWinner: boolean;
-            leagueRecord: {
-                wins: number;
-                losses: number;
-                pct: string;
-            };
         };
     };
     venue: {
         id: number;
         name: string;
-        link: string;
-    };
-    weather?: {
-        condition: string;
-        temp: string;
-        wind: string;
-    };
-    gameInfo?: {
-        firstPitch: string;
-        attendance: number;
-        gameDuration: string;
-    };
-    flags: {
-        noHitter: boolean;
-        perfectGame: boolean;
-        awayTeamNoHitter: boolean;
-        awayTeamPerfectGame: boolean;
-        homeTeamNoHitter: boolean;
-        homeTeamPerfectGame: boolean;
     };
 }

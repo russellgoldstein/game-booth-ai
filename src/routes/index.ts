@@ -4,6 +4,7 @@ import { json } from 'body-parser';
 import rateLimit from 'express-rate-limit';
 import chatRoutes from './chat.routes';
 import statsRoutes from './stats.routes';
+import gamesRoutes from './games.routes';
 
 const router = express.Router();
 
@@ -23,5 +24,6 @@ router.use(json({ limit: '10kb' }));
 // Mount route modules
 router.use('/api/chat', chatRoutes);
 router.use('/stats', statsRoutes);
+router.use('/api/games', gamesRoutes);
 
 export default router;

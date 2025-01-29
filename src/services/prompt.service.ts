@@ -51,6 +51,42 @@ interface StatCategories {
     };
 }
 
+interface AtBatContext {
+    result: any;
+    matchup: {
+        batter: string;
+        pitcher: string;
+    };
+    count: {
+        balls: number;
+        strikes: number;
+        outs: number;
+    };
+    pitches: Array<{
+        type: string;
+        speed: number;
+        location: number;
+        result: string;
+    }>;
+    runners: any[];
+    gameContext: {
+        inning: number;
+        isTopInning: boolean;
+        outs: number;
+        score: {
+            away: number;
+            home: number;
+        };
+    };
+}
+
+interface Commentary {
+    summary: string;
+    analysis: string;
+    isKeyMoment: boolean;
+    significance: string;
+}
+
 export class PromptService {
     private static readonly LANGUAGES = {
         en: 'English',
@@ -461,5 +497,46 @@ ${this.formatPlayerStats(playerStats, relevantStats)}` : ''}
         if (['wins', 'losses', 'saves', 'holds'].includes(statKey)) return 'results';
         if (['strikeoutsPer9Inn', 'walksPer9Inn'].includes(statKey)) return 'rates';
         return 'other';
+    }
+
+    generateAtBatCommentary(context: AtBatContext): string {
+        const prompt = `
+            As a baseball commentator, provide analysis for this at-bat:
+            
+            Situation: ${context.gameContext.isTopInning ? 'Top' : 'Bottom'} of the ${context.gameContext.inning}${this.getInningOrdinal(context.gameContext.inning)},
+            Score: ${context.gameContext.score.away}-${context.gameContext.score.home}
+            ${context.matchup.pitcher} pitching to ${context.matchup.batter}
+            
+            Pitch Sequence:
+            ${context.pitches.map((pitch, i) =>
+            `Pitch ${i + 1}: ${pitch.type} (${pitch.speed} mph) - ${pitch.result}`
+        ).join('\n')}
+            
+            Final Result: ${context.result.description}
+            
+            Please provide:
+            1. A brief play-by-play summary
+            2. Strategic analysis of the at-bat
+            3. Assessment of its significance in the game
+        `;
+
+        return prompt;
+    }
+
+    private getInningOrdinal(inning: number): string {
+        const suffixes = ['th', 'st', 'nd', 'rd'];
+        const v = inning % 100;
+        return suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0];
+    }
+
+    private isKeyMoment(context: AtBatContext): boolean {
+        // Define criteria for key moments
+        const isLateInning = context.gameContext.inning >= 7;
+        const isCloseSituation = Math.abs(context.gameContext.score.away - context.gameContext.score.home) <= 3;
+        const hasRunnersInScoringPosition = context.runners.some(runner =>
+            runner.movement.start === '2B' || runner.movement.start === '3B'
+        );
+
+        return isLateInning && (isCloseSituation || hasRunnersInScoringPosition);
     }
 } 

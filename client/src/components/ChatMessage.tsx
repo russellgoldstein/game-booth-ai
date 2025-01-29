@@ -12,16 +12,23 @@ import { ChatMessage as ChatMessageType } from '../types/chat.types';
 import StatsVisualization from './StatsVisualization';
 
 const MessageContainer = styled(Box, {
-    shouldForwardProp: (prop) => prop !== 'isAi'
-})<{ isAi: boolean }>(({ theme, isAi }) => ({
+    shouldForwardProp: (prop) => prop !== 'isAi' && prop !== 'isCommentary'
+})<{ isAi: boolean; isCommentary?: boolean }>(({ theme, isAi, isCommentary }) => ({
     display: 'flex',
     gap: theme.spacing(2),
     marginBottom: theme.spacing(2),
     justifyContent: isAi ? 'flex-start' : 'flex-end',
+    padding: theme.spacing(1),
+    borderRadius: theme.shape.borderRadius,
+    backgroundColor: isCommentary
+        ? theme.palette.info.light
+        : isAi ? theme.palette.grey[100] : theme.palette.primary.light,
     '.MuiPaper-root': {
         backgroundColor: isAi ? theme.palette.grey[100] : theme.palette.primary.light,
         color: isAi ? theme.palette.text.primary : theme.palette.primary.contrastText,
-    }
+    },
+    maxWidth: '80%',
+    alignSelf: 'flex-start',
 }));
 
 const MessageContent = styled(Paper)(({ theme }) => ({
@@ -49,9 +56,10 @@ const VisualizationContainer = styled(Box)(({ theme }) => ({
 
 interface Props {
     message: ChatMessageType;
+    isCommentary?: boolean;
 }
 
-export default function ChatMessage({ message }: Props) {
+export default function ChatMessage({ message, isCommentary }: Props) {
     const { text, sender, gameContext, visualizations } = message;
     const isAi = sender === 'ai';
 
@@ -59,7 +67,7 @@ export default function ChatMessage({ message }: Props) {
     const paragraphs = text.split('\n').filter(p => p.trim());
 
     return (
-        <MessageContainer isAi={isAi}>
+        <MessageContainer isAi={isAi} isCommentary={isCommentary}>
             {isAi && (
                 <IconWrapper>
                     <SmartToyIcon color="primary" />

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { styled } from '@mui/material/styles';
 import {
     Box,
@@ -11,10 +11,45 @@ import {
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import { ChatMessage as ChatMessageType } from '../types/chat.types';
-import GameContext from './GameContext';
 import ChatMessageComponent from './ChatMessage';
 import StatsVisualization from './StatsVisualization';
-import mlbService from '../services/mlb.service';
+import GameSituation from './GameSituation';
+
+interface GameContext {
+    gameId: string;
+    inning: number;
+    isTopInning: boolean;
+    count: {
+        balls: number;
+        strikes: number;
+        outs: number;
+    };
+    pitcher: {
+        id: string;
+        fullName: string;
+        stats: any;
+    };
+    batter: {
+        id: string;
+        fullName: string;
+        stats: any;
+    };
+    runnersOn: Array<{
+        base: string;
+        player: {
+            id: string;
+            fullName: string;
+        };
+    }>;
+    score: {
+        away: number;
+        home: number;
+    };
+}
+
+interface Props {
+    gameContext: GameContext | null;
+}
 
 const Container = styled(Box)(({ theme }) => ({
     display: 'flex',
@@ -39,39 +74,23 @@ const SidePanel = styled(Paper)(({ theme }) => ({
     gap: theme.spacing(2)
 }));
 
-export default function ChatInterface() {
+export default function ChatInterface({ gameContext }: Props) {
     const [messages, setMessages] = useState<ChatMessageType[]>([]);
     const [input, setInput] = useState('');
     const [language, setLanguage] = useState('en');
-    const [gameId, setGameId] = useState<string | null>(null);
 
-    const fetchVisualizations = async (gameContext: any) => {
-        try {
-            const [pitchData, tendencies, matchupData] = await Promise.all([
-                mlbService.getPitchData(gameContext.gameId, gameContext.pitcher.id),
-                mlbService.getPitchingTendencies(gameContext.pitcher.id),
-                mlbService.getMatchupVisualizations(
-                    gameContext.batter.id,
-                    gameContext.pitcher.id
-                )
-            ]);
+    // Add event listener for commentary messages
+    useEffect(() => {
+        const handleNewCommentary = (event: CustomEvent<ChatMessageType>) => {
+            setMessages(prev => [...prev, event.detail]);
+        };
 
-            return [
-                {
-                    type: 'pitchLocation',
-                    data: pitchData
-                },
-                {
-                    type: 'heatmap',
-                    data: tendencies
-                },
-                // Add additional visualizations from matchupData
-            ];
-        } catch (error) {
-            console.error('Error fetching visualizations:', error);
-            return [];
-        }
-    };
+        window.addEventListener('newCommentary', handleNewCommentary as EventListener);
+
+        return () => {
+            window.removeEventListener('newCommentary', handleNewCommentary as EventListener);
+        };
+    }, []);
 
     const handleSend = async () => {
         if (!input.trim()) return;
@@ -94,7 +113,7 @@ export default function ChatInterface() {
                 body: JSON.stringify({
                     message: input,
                     language,
-                    gameId
+                    gameContext // Pass the entire game context
                 })
             });
 
@@ -104,14 +123,9 @@ export default function ChatInterface() {
                 id: Date.now().toString(),
                 text: data.response,
                 sender: 'ai',
-                gameContext: data.gameContext,
+                gameContext: gameContext, // Use the current game context
                 visualizations: data.visualizations
             };
-
-            if (data.gameContext) {
-                const visualizations = await fetchVisualizations(data.gameContext);
-                aiMessage.visualizations = visualizations;
-            }
 
             setMessages(prev => [...prev, aiMessage]);
         } catch (error) {
@@ -127,6 +141,7 @@ export default function ChatInterface() {
                         <ChatMessageComponent
                             key={message.id}
                             message={message}
+                            isCommentary={message.isCommentary}
                         />
                     ))}
                 </Box>
@@ -146,17 +161,21 @@ export default function ChatInterface() {
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                        placeholder="Ask about the game..."
+                        placeholder={gameContext ? "Ask about the game..." : "Select a game to start chatting..."}
                         size="small"
+                        disabled={!gameContext}
                     />
-                    <IconButton onClick={handleSend} color="primary">
+                    <IconButton
+                        onClick={handleSend}
+                        color="primary"
+                        disabled={!gameContext}
+                    >
                         <SendIcon />
                     </IconButton>
                 </Box>
             </ChatContainer>
             <SidePanel>
-                <GameContext gameId={gameId} onGameSelect={setGameId} />
-                <StatsVisualization />
+                {gameContext && <GameSituation gameContext={gameContext} />}
             </SidePanel>
         </Container>
     );

@@ -3,9 +3,6 @@ import { VertexAIService } from '../services/vertexai.service';
 import { MLBService } from '../services/mlb.service';
 import { QuestionAnalyzer } from '../services/question-analyzer.service';
 import { PromptService } from '../services/prompt.service';
-import { GameContext } from '../types/mlb.types';
-import { format } from 'date-fns';
-import axios from 'axios';
 
 const router = Router();
 const vertexAI = new VertexAIService();
@@ -28,7 +25,6 @@ router.post('/', async (req: Request<{}, {}, ChatRequest>, res: Response) => {
             throw new Error('Game ID is required');
         }
 
-        const gameMetadata = await mlbService.getGameMetadata(gameId);
 
         // First, analyze the question to determine what data we need
         const analysis = await questionAnalyzer.analyze(message);
@@ -40,7 +36,7 @@ router.post('/', async (req: Request<{}, {}, ChatRequest>, res: Response) => {
 
         console.log('Game Context:', JSON.stringify(gameContext, null, 2));
         // Gather only the required data based on the analysis
-        const requiredData = await mlbService.getRequiredData(analysis, gameId, gameContext, gameMetadata);
+        const requiredData = await mlbService.getRequiredData(analysis, gameId, gameContext, gameContext.gameMetadata);
         console.log('Required Data:', JSON.stringify(requiredData, null, 2));
         // Generate the prompt with the targeted data
         const prompt = promptService.generateBaseballPrompt({

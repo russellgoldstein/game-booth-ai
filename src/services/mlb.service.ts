@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Player, GameContext, MatchupStats, CurrentPlay, GameMetadata } from '../types/mlb.types';
+import { Player, GameContext, MatchupStats, CurrentPlay, GameMetadata, Game } from '../types/mlb.types';
 import { format } from 'date-fns';
 import { QuestionAnalysis } from '../types/question-analyzer.types';
 
@@ -38,7 +38,7 @@ interface GameResponse {
 export class MLBService {
     public baseUrl = 'https://statsapi.mlb.com/api/v1';
 
-    private async getGamesForDate(date: string): Promise<GameResponse[]> {
+    public async getGamesForDate(date: string): Promise<GameResponse[]> {
         const response = await axios.get(`${this.baseUrl}/schedule`, {
             params: {
                 sportId: 1,  // MLB
@@ -164,7 +164,8 @@ export class MLBService {
                 currentPlayResult: currentPlay.result,
                 pitcher: await this.getPlayer(currentPlay.matchup.pitcher.id),
                 batter: await this.getPlayer(currentPlay.matchup.batter.id),
-                runnersOn: await this.getCurrentRunners(gameData)
+                runnersOn: await this.getCurrentRunners(gameData),
+                gameMetadata: gameData
             };
         } catch (error) {
             console.error('Error getting game context:', error);
@@ -221,14 +222,14 @@ export class MLBService {
         if (analysis.dataNeeded.batterStats && gameContext?.batter) {
             data.batterStats = await this.getPlayerStats(
                 gameContext.batter.id,
-                this.getStatsParams(analysis.timeframe, gameMetadata?.gameDate)
+                this.getStatsParams(analysis.timeframe, gameMetadata?.gameData.datetime.dateTime)
             );
         }
 
         if (analysis.dataNeeded.pitcherStats && gameContext?.pitcher) {
             data.pitcherStats = await this.getPlayerStats(
                 gameContext.pitcher.id,
-                this.getStatsParams(analysis.timeframe, gameMetadata?.gameDate)
+                this.getStatsParams(analysis.timeframe, gameMetadata?.gameData.datetime.dateTime)
             );
         }
 
@@ -244,14 +245,15 @@ export class MLBService {
         if (analysis.dataNeeded.recentPerformance && gameContext?.pitcher) {
             data.recentPerformance = await this.getPlayerStats(
                 gameContext.pitcher.id,
-                this.getStatsParams(analysis.timeframe, gameMetadata?.gameDate)
+                this.getStatsParams(analysis.timeframe, gameMetadata?.gameData.datetime.dateTime)
             );
         }
 
         if (analysis.dataNeeded.recentPerformance && gameContext?.batter) {
+            console.log('Getting recent performance for game Metadata:', gameMetadata);
             data.recentPerformance = await this.getPlayerStats(
                 gameContext.batter.id,
-                this.getStatsParams(analysis.timeframe, gameMetadata?.gameDate)
+                this.getStatsParams(analysis.timeframe, gameMetadata?.gameData.datetime.dateTime)
             );
         }
 
@@ -260,6 +262,7 @@ export class MLBService {
     }
 
     private getStatsParams(timeframe: QuestionAnalysis['timeframe'], gameDate?: string) {
+        const gameDateObj = gameDate ? new Date(gameDate) : new Date();
         const params: {
             stats: string;
             group?: string;
@@ -269,13 +272,12 @@ export class MLBService {
             endDate?: string;
         } = {
             stats: 'season',
-            gameType: 'R'  // Regular season
         };
 
         switch (timeframe) {
             case 'season':
                 params.stats = 'season';
-                params.season = new Date().getFullYear();
+                params.season = gameDateObj.getFullYear();
                 break;
 
             case 'recent':
@@ -285,8 +287,9 @@ export class MLBService {
                     const startDate = new Date(gameDate);
                     startDate.setDate(startDate.getDate() - 14);
                     params.startDate = startDate.toISOString().split('T')[0];
-                    params.endDate = gameDate;
+                    params.endDate = gameDateObj.toISOString().split('T')[0];
                 }
+                console.log('Recent Stats Params:', JSON.stringify(params, null, 2));
                 break;
 
             case 'historical':
@@ -302,7 +305,7 @@ export class MLBService {
                     const startDate = new Date(gameDate);
                     startDate.setDate(startDate.getDate() - 3);
                     params.startDate = startDate.toISOString().split('T')[0];
-                    params.endDate = gameDate;
+                    params.endDate = gameDateObj.toISOString().split('T')[0];
                 }
                 break;
         }
@@ -310,82 +313,104 @@ export class MLBService {
         return params;
     }
 
-    async getGameMetadata(gameId: string): Promise<GameMetadata> {
+    async getAtBat(gameId: string, atBatNumber: number): Promise<any> {
         try {
             const response = await axios.get(
-                `https://statsapi.mlb.com/api/v1.1/game/${gameId}/feed/live`,
-                {
-                    params: {
-                        fields: [
-                            'gamePk',
-                            'link',
-                            'gameType',
-                            'season',
-                            'gameDate',
-                            'status',
-                            'teams',
-                            'venue',
-                            'weather',
-                            'gameInfo',
-                            'flags'
-                        ].join(',')
-                    }
-                }
+                `${this.baseUrl}/game/${gameId}/playByPlay`,
             );
+            console.log('At-bat:', JSON.stringify(response.data, null, 2));
 
-            const { gameData, liveData } = response.data;
+            const { allPlays } = response.data;
 
+            // Ensure atBatNumber is within bounds
+            if (atBatNumber >= allPlays.length) {
+                throw new Error('At-bat number exceeds game length');
+            }
+
+            // Get the specific at-bat
+            const atBat = allPlays[atBatNumber];
+
+            // Transform the at-bat data into a consistent format
             return {
-                gamePk: gameData.gamePk,
-                link: gameData.link,
-                gameType: gameData.gameType,
-                season: gameData.season,
-                gameDate: gameData.datetime.dateTime,
-                status: {
-                    abstractGameState: gameData.status.abstractGameState,
-                    codedGameState: gameData.status.codedGameState,
-                    detailedState: gameData.status.detailedState,
-                    statusCode: gameData.status.statusCode,
-                    startTimeTBD: gameData.status.startTimeTBD,
-                    abstractGameCode: gameData.status.abstractGameCode
+                result: {
+                    type: atBat.result.type,
+                    event: atBat.result.event,
+                    eventType: atBat.result.eventType,
+                    description: atBat.result.description,
+                    rbi: atBat.result.rbi,
+                    awayScore: atBat.result.awayScore,
+                    homeScore: atBat.result.homeScore,
+                    isOut: atBat.result.isOut
                 },
-                teams: {
-                    away: {
-                        team: gameData.teams.away,
-                        score: liveData.linescore.teams.away.runs,
-                        isWinner: liveData.linescore.teams.away.runs > liveData.linescore.teams.home.runs,
-                        leagueRecord: gameData.teams.away.record
+                about: {
+                    atBatIndex: atBat.about.atBatIndex,
+                    halfInning: atBat.about.halfInning,
+                    isTopInning: atBat.about.isTopInning,
+                    inning: atBat.about.inning,
+                    startTime: atBat.about.startTime,
+                    endTime: atBat.about.endTime,
+                    isComplete: atBat.about.isComplete,
+                    isScoringPlay: atBat.about.isScoringPlay,
+                    hasOut: atBat.about.hasOut,
+                    captivatingIndex: atBat.about.captivatingIndex
+                },
+                count: {
+                    balls: atBat.count.balls,
+                    strikes: atBat.count.strikes,
+                    outs: atBat.count.outs
+                },
+                matchup: {
+                    batter: {
+                        id: atBat.matchup.batter.id,
+                        fullName: atBat.matchup.batter.fullName,
+                        link: atBat.matchup.batter.link
                     },
-                    home: {
-                        team: gameData.teams.home,
-                        score: liveData.linescore.teams.home.runs,
-                        isWinner: liveData.linescore.teams.home.runs > liveData.linescore.teams.away.runs,
-                        leagueRecord: gameData.teams.home.record
-                    }
+                    pitcher: {
+                        id: atBat.matchup.pitcher.id,
+                        fullName: atBat.matchup.pitcher.fullName,
+                        link: atBat.matchup.pitcher.link
+                    },
+                    batSide: atBat.matchup.batSide,
+                    pitchHand: atBat.matchup.pitchHand,
+                    splits: atBat.matchup.splits
                 },
-                venue: gameData.venue,
-                weather: gameData.weather ? {
-                    condition: gameData.weather.condition,
-                    temp: gameData.weather.temp,
-                    wind: gameData.weather.wind
-                } : undefined,
-                gameInfo: gameData.gameInfo ? {
-                    firstPitch: gameData.gameInfo.firstPitch,
-                    attendance: gameData.gameInfo.attendance,
-                    gameDuration: gameData.gameInfo.gameDuration
-                } : undefined,
-                flags: {
-                    noHitter: gameData.flags.noHitter,
-                    perfectGame: gameData.flags.perfectGame,
-                    awayTeamNoHitter: gameData.flags.awayTeamNoHitter,
-                    awayTeamPerfectGame: gameData.flags.awayTeamPerfectGame,
-                    homeTeamNoHitter: gameData.flags.homeTeamNoHitter,
-                    homeTeamPerfectGame: gameData.flags.homeTeamPerfectGame
-                }
+                pitchIndex: atBat.pitchIndex,
+                actionIndex: atBat.actionIndex,
+                runnerIndex: atBat.runnerIndex,
+                runners: atBat.runners.map((runner: any) => ({
+                    movement: {
+                        originBase: runner.movement.originBase,
+                        start: runner.movement.start,
+                        end: runner.movement.end,
+                        outBase: runner.movement.outBase,
+                        isOut: runner.movement.isOut
+                    },
+                    details: {
+                        event: runner.details.event,
+                        eventType: runner.details.eventType,
+                        movementReason: runner.details.movementReason,
+                        runner: {
+                            id: runner.details.runner.id,
+                            fullName: runner.details.runner.fullName,
+                            link: runner.details.runner.link
+                        },
+                        responsiblePitcher: runner.details.responsiblePitcher,
+                        isScoringEvent: runner.details.isScoringEvent,
+                        rbi: runner.details.rbi,
+                        earned: runner.details.earned,
+                        teamUnearned: runner.details.teamUnearned,
+                        playIndex: runner.details.playIndex
+                    },
+                    credits: runner.credits
+                })),
+                playEvents: atBat.playEvents,
+                playEndTime: atBat.playEndTime,
+                atBatIndex: atBat.atBatIndex
             };
+
         } catch (error) {
-            console.error('Error fetching game metadata:', error);
-            throw new Error('Failed to fetch game metadata');
+            console.error('Error fetching at-bat:', error);
+            throw error;
         }
     }
 } 
